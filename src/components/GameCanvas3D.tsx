@@ -165,8 +165,11 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
     const texLoader = new THREE.TextureLoader();
     const babySpriteTex = texLoader.load(babySpriteImg);
     babySpriteTex.colorSpace = THREE.SRGBColorSpace;
+    babySpriteTex.generateMipmaps = false;
     babySpriteTex.minFilter = THREE.NearestFilter;
     babySpriteTex.magFilter = THREE.NearestFilter;
+    babySpriteTex.wrapS = THREE.ClampToEdgeWrapping;
+    babySpriteTex.wrapT = THREE.ClampToEdgeWrapping;
     
     const popokTex = texLoader.load(popokImg);
     popokTex.colorSpace = THREE.SRGBColorSpace;
@@ -180,11 +183,19 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       const babyGroup = new THREE.Group();
 
       const spriteTexClone = babySpriteTex.clone();
+      spriteTexClone.generateMipmaps = false;
+      spriteTexClone.minFilter = THREE.NearestFilter;
+      spriteTexClone.magFilter = THREE.NearestFilter;
+      spriteTexClone.wrapS = THREE.ClampToEdgeWrapping;
+      spriteTexClone.wrapT = THREE.ClampToEdgeWrapping;
+      spriteTexClone.repeat.set(1/8, 1/5);
+      spriteTexClone.offset.set(0, 3/5);
+
       const babyMat = new THREE.SpriteMaterial({ map: spriteTexClone, transparent: true });
       const baby2DSprite = new THREE.Sprite(babyMat);
       
-      baby2DSprite.scale.set(3.4375, 3, 1);
-      baby2DSprite.position.set(0, 1.55, 0);
+      baby2DSprite.scale.set(3, 3, 1);
+      baby2DSprite.position.set(0, 1.4, 0);
       babyGroup.add(baby2DSprite);
 
       const diaperMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.3 });
@@ -464,7 +475,7 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           moveDir.normalize();
           babyData.mesh.position.addScaledVector(moveDir, babyData.crawlSpeed * deltaTime);
           
-          if (babyData.state !== 'idle_sit') {
+          if (babyData.state !== 'feed' && babyData.state !== 'idle_sit') {
             babyData.state = 'crawl';
           }
 
@@ -476,7 +487,7 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
             babyData.spriteTex.offset.x = babyData.animFrame / 8;
           }
         } else {
-          if (babyData.state !== 'idle_sit') {
+          if (babyData.state !== 'feed' && babyData.state !== 'idle_sit') {
             babyData.state = 'idle';
           }
         }
@@ -493,13 +504,16 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           }
         }
 
+        const animState = babyData.state as string;
         if (babyData.isExploded) {
           babyData.spriteTex.offset.y = 0 / 5;
-        } else if (babyData.state === 'idle') {
-          babyData.spriteTex.offset.y = 3 / 5;
-        } else if (babyData.state === 'crawl') {
+        } else if (animState === 'feed') {
+          babyData.spriteTex.offset.y = 1 / 5;
+        } else if (babyData.leakMeter >= 75) {
+          babyData.spriteTex.offset.y = 2 / 5;
+        } else if (animState === 'crawl') {
           babyData.spriteTex.offset.y = 4 / 5;
-        } else if (babyData.state === 'idle_sit') {
+        } else {
           babyData.spriteTex.offset.y = 3 / 5;
         }
       }
@@ -521,12 +535,12 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
             const accuracy = isBullseye ? 1.0 : Math.max(0.5, 1 - distToBaby / normalRadius);
 
             babyData.leakMeter = 0;
-            babyData.state = 'idle_sit';
+            babyData.state = 'feed';
             setTimeout(() => {
-              if (!babyData.isExploded && babyData.state === 'idle_sit') {
+              if (!babyData.isExploded && babyData.state === 'feed') {
                 babyData.state = 'idle';
               }
-            }, 1000);
+            }, 800);
             babyData.crawlSpeed = Math.min(babyData.crawlSpeed + settingsRef.current.speedIncreasePerHit, settingsRef.current.crawlSpeedMax);
             updateLeakBarUI(babyData);
 
