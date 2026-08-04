@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GameSettings, GameState } from '../types';
 import { soundEffects } from '../utils/audioSynth';
-import { Play, RotateCcw, Video, ShieldAlert, Smartphone, Maximize2 } from 'lucide-react';
+import { Play, RotateCcw, Video, ShieldAlert, Smartphone, Maximize2, Minimize2 } from 'lucide-react';
 import babySpriteImg from '../assets/images/Human Baby Sprite Sheet.png';
 import floorBgImg from '../assets/images/rushbg.png';
 import popokImg from '../assets/images/popok.png';
@@ -41,6 +41,7 @@ interface DiaperFlight {
 
 export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const [gameState, setGameState] = useState<GameState>(GameState.MainMenu);
   const [score, setScore] = useState<number>(0);
@@ -50,13 +51,40 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
   const [combo, setCombo] = useState<number>(0);
   const [lastAccuracy, setLastAccuracy] = useState<{ text: string; color: string } | null>(null);
   const [leakMeterVal, setLeakMeterVal] = useState<number>(0);
-  const [isPhoneFrame, setIsPhoneFrame] = useState<boolean>(false);
+  const [isPhoneFrame, setIsPhoneFrame] = useState<boolean>(true);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [gameTime, setGameTime] = useState<number>(0);
 
   const gameStateRef = useRef<GameState>(GameState.MainMenu);
   const settingsRef = useRef<GameSettings>(settings);
   const scoreRef = useRef<number>(0);
   const comboRef = useRef<number>(0);
+  const resetGameRef = useRef<((reviveOnly?: boolean) => void) | null>(null);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      if (containerRef.current.requestFullscreen) {
+        containerRef.current.requestFullscreen().catch(() => {
+          setIsFullscreen(!isFullscreen);
+        });
+      } else {
+        setIsFullscreen(!isFullscreen);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+  };
 
   useEffect(() => {
     gameStateRef.current = gameState;
@@ -280,6 +308,39 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       cameraShakeIntensity = intensity;
     };
 
+    let sessionDuration = 0;
+
+    resetGameRef.current = (reviveOnly = false) => {
+      babyData.isExploded = false;
+      babyData.leakMeter = reviveOnly ? 20 : 0;
+      babyData.crawlSpeed = settingsRef.current.crawlSpeedMin;
+      babyData.mesh.position.set(0, 0, 0);
+      babyData.targetPos.set(0, 0, 0);
+      babyData.wanderTimer = 0;
+      babyData.state = 'idle';
+      babyData.baby2DSprite.material.color.setHex(0xffffff);
+      sessionDuration = 0;
+      setGameTime(0);
+      setLeakMeterVal(babyData.leakMeter);
+      updateLeakBarUI(babyData);
+
+      diapersFlying.forEach(f => scene.remove(f.mesh));
+      diapersFlying.length = 0;
+
+      particleSystems.forEach(ps => {
+        scene.remove(ps.system);
+        ps.system.geometry.dispose();
+      });
+      particleSystems.length = 0;
+
+      if (!reviveOnly) {
+        scoreRef.current = 0;
+        comboRef.current = 0;
+        setScore(0);
+        setCombo(0);
+      }
+    };
+
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -324,7 +385,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
 
     let animationFrameId: number;
     let lastTime = performance.now();
-    let sessionDuration = 0;
 
     const animate = (currentTime: number) => {
       animationFrameId = requestAnimationFrame(animate);
@@ -558,19 +618,45 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
   }, []);
 
   const handleStartGame = () => {
-    scoreRef.current = 0;
-    comboRef.current = 0;
-    setScore(0);
-    setCombo(0);
+    if (resetGameRef.current) {
+      resetGameRef.current(false);
+    }
     setGameState(GameState.Playing);
   };
 
   const handleRevive = () => {
+    if (resetGameRef.current) {
+      resetGameRef.current(true);
+    }
     setGameState(GameState.Playing);
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900 p-2 sm:p-4 overflow-hidden">
+    <div
+      ref={containerRef}
+      className={`relative w-full h-full flex flex-col items-center justify-center bg-slate-900 overflow-hidden ${
+        isFullscreen ? 'fixed inset-0 z-50 p-0 m-0 w-screen h-screen' : 'p-2 sm:p-4'
+      }`}
+    >
+      <div className="absolute top-3 right-3 z-30 flex items-center gap-2 bg-slate-800/90 backdrop-blur border border-slate-700 rounded-lg p-1.5 shadow-md text-xs text-slate-300">
+        <button
+          onClick={() => setIsPhoneFrame(!isPhoneFrame)}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 transition text-white font-medium cursor-pointer"
+          title="Toggle Mobile View"
+        >
+          <Smartphone className="w-4 h-4 text-emerald-400" />
+          <span className="hidden sm:inline">{isPhoneFrame ? 'Mobile View' : 'Full Canvas'}</span>
+        </button>
+
+        <button
+          onClick={toggleFullscreen}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition cursor-pointer shadow"
+          title="Toggle Full Screen Mode"
+        >
+          {isFullscreen ? <Minimize2 className="w-4 h-4 text-slate-950" /> : <Maximize2 className="w-4 h-4 text-slate-950" />}
+          <span className="hidden sm:inline">{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+        </button>
+      </div>
       <div
         className={`relative transition-all duration-300 ${
           isPhoneFrame
@@ -670,9 +756,9 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
 
               <button
                 onClick={handleStartGame}
-                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition"
+                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 transition active:scale-95 shadow-md shadow-amber-500/20 cursor-pointer"
               >
-                <RotateCcw className="w-4 h-4" />
+                <RotateCcw className="w-4 h-4 text-slate-950" />
                 PLAY AGAIN
               </button>
             </div>
