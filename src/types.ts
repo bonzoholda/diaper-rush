@@ -6,8 +6,8 @@ export enum GameState {
 }
 
 export interface GameSettings {
-  baseLeakSpeed: number;
-  difficultyRamp: number;
+  baseLeakSpeed: number; // leak units per sec
+  difficultyRamp: number; // how fast leak speed increases over time
   crawlSpeedMin: number;
   crawlSpeedMax: number;
   speedIncreasePerHit: number;
@@ -16,4 +16,12 @@ export interface GameSettings {
   throwSpeed: number;
   maxBabies: number;
   enableSound: boolean;
+}
+
+export interface CSharpFile {
+  id: string;
+  filename: string;
+  description: string;
+  code: (settings: GameSettings) => string;
+  tags: string[];
 }
