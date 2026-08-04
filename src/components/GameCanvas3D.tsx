@@ -143,8 +143,9 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
 
     const borderGeo = new THREE.BoxGeometry(settings.boundingBoxWidth, 0.1, settings.boundingBoxLength);
     const borderEdges = new THREE.EdgesGeometry(borderGeo);
-    const borderLine = new THREE.LineSegments(borderEdges, new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 }));
+    const borderLine = new THREE.LineSegments(borderEdges, new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0 }));
     borderLine.position.y = 0.05;
+    borderLine.visible = false;
     scene.add(borderLine);
 
     const toyMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.4 });
