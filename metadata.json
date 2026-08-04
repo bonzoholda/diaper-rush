@@ -1,0 +1,6 @@
+{
+  "name": "Diaper Rush: Code Brown!",
+  "description": "Hyper-casual 3D mobile game simulator and complete C# Unity scripts (GameManager & BabyController with leak meter, mechanics, and interactive inspector).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
