@@ -7,6 +7,7 @@ import babySpriteImg from '../assets/images/Human Baby Sprite Sheet.png';
 import floorBgImg from '../assets/images/rushbg.png';
 import popokImg from '../assets/images/popok.png';
 import gameTitleImg from '../assets/images/gametitle.png';
+import wetpoopImg from '../assets/images/wetpoop.png';
 
 interface GameCanvas3DProps {
   settings: GameSettings;
@@ -176,6 +177,11 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
     popokTex.minFilter = THREE.NearestFilter;
     popokTex.magFilter = THREE.NearestFilter;
 
+    const wetpoopTex = texLoader.load(wetpoopImg);
+    wetpoopTex.colorSpace = THREE.SRGBColorSpace;
+    wetpoopTex.minFilter = THREE.NearestFilter;
+    wetpoopTex.magFilter = THREE.NearestFilter;
+
     babySpriteTex.repeat.set(1/8, 1/5);
     babySpriteTex.offset.set(0, 3/5);
 
@@ -273,6 +279,15 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
     const diapersFlying: DiaperFlight[] = [];
     const particleSystems: { system: THREE.Points; life: number; maxLife: number }[] = [];
 
+    interface FlyingPoopSprite {
+      sprite: THREE.Sprite;
+      velocity: THREE.Vector3;
+      rotSpeed: number;
+      life: number;
+      maxLife: number;
+    }
+    const poopParticles: FlyingPoopSprite[] = [];
+
     const spawnParticleExplosion = (pos: THREE.Vector3, isPoopExplosion: boolean) => {
       const particleCount = isPoopExplosion ? 120 : 35;
       const geometry = new THREE.BufferGeometry();
@@ -309,6 +324,41 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
         life: 0,
         maxLife: isPoopExplosion ? 1.5 : 0.6,
       });
+
+      if (isPoopExplosion) {
+        const poopCount = 18;
+        for (let i = 0; i < poopCount; i++) {
+          const pMat = new THREE.SpriteMaterial({
+            map: wetpoopTex,
+            transparent: true,
+            opacity: 0.95,
+          });
+          const pSprite = new THREE.Sprite(pMat);
+          const size = 0.5 + Math.random() * 0.4;
+          pSprite.scale.set(size, size, 1);
+          pSprite.position.copy(pos).add(new THREE.Vector3(
+            (Math.random() - 0.5) * 0.4,
+            0.6 + Math.random() * 0.4,
+            (Math.random() - 0.5) * 0.4
+          ));
+          scene.add(pSprite);
+
+          const vel = new THREE.Vector3(
+            (Math.random() - 0.5) * 8,
+            Math.random() * 7 + 3,
+            (Math.random() - 0.5) * 8
+          );
+          const rotSpeed = (Math.random() - 0.5) * 8;
+
+          poopParticles.push({
+            sprite: pSprite,
+            velocity: vel,
+            rotSpeed,
+            life: 0,
+            maxLife: 1.8,
+          });
+        }
+      }
     };
 
     let cameraShakeTime = 0;
@@ -344,6 +394,12 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
         ps.system.geometry.dispose();
       });
       particleSystems.length = 0;
+
+      poopParticles.forEach(p => {
+        scene.remove(p.sprite);
+        p.sprite.material.dispose();
+      });
+      poopParticles.length = 0;
 
       if (!reviveOnly) {
         scoreRef.current = 0;
@@ -605,6 +661,20 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
         }
       }
 
+      for (let i = poopParticles.length - 1; i >= 0; i--) {
+        const p = poopParticles[i];
+        p.life += deltaTime;
+        p.velocity.y -= deltaTime * 12;
+        p.sprite.position.addScaledVector(p.velocity, deltaTime);
+        p.sprite.material.rotation += p.rotSpeed * deltaTime;
+        p.sprite.material.opacity = Math.max(0, 1 - p.life / p.maxLife);
+        if (p.life >= p.maxLife || p.sprite.position.y < 0.1) {
+          scene.remove(p.sprite);
+          p.sprite.material.dispose();
+          poopParticles.splice(i, 1);
+        }
+      }
+
       renderer.render(scene, camera);
     };
 
@@ -742,9 +812,9 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
         )}
 
         {gameState === GameState.GameOver && (
-          <div className="absolute inset-0 z-30 bg-rose-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
-            <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mb-4">
-              <ShieldAlert className="w-10 h-10 text-rose-400" />
+          <div className="absolute inset-0 z-30 bg-rose-950/92 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+            <div className="w-20 h-20 rounded-2xl bg-amber-950/70 border border-amber-500/50 flex items-center justify-center mb-3 shadow-xl shadow-amber-950/60 ring-2 ring-amber-500/30">
+              <img src={wetpoopImg} alt="Code Brown Poop" className="w-16 h-16 object-contain drop-shadow-md animate-bounce" />
             </div>
             <h2 className="text-2xl font-black text-white mb-1">CODE BROWN!</h2>
             <p className="text-xs text-rose-200/80 mb-6">The diaper leaked! The baby exploded in poop!</p>
