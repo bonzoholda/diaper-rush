@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GameSettings, GameState } from '../types';
 import { soundEffects } from '../utils/audioSynth';
-import { Play, RotateCcw, Video, ShieldAlert, Sparkles, Smartphone, Maximize2 } from 'lucide-react';
-import babySpriteImg from '../../assets/images/Human Baby Sprite Sheet.png';
+import { Play, RotateCcw, Video, ShieldAlert, Smartphone, Maximize2 } from 'lucide-react';
+import babySpriteImg from '../assets/images/Human Baby Sprite Sheet.png';
 import floorBgImg from '../assets/images/rushbg.png';
 import popokImg from '../assets/images/popok.png';
 import gameTitleImg from '../assets/images/gametitle.png';
@@ -15,13 +15,13 @@ interface GameCanvas3DProps {
 
 interface BabyData {
   mesh: THREE.Group;
-  diaperMat: THREE.MeshStandardMaterial; // Kept for backwards compatibility
+  diaperMat: THREE.MeshStandardMaterial;
   spriteTex: THREE.Texture;
   baby2DSprite: THREE.Sprite;
   animTimer: number;
   animFrame: number;
   state: 'idle' | 'crawl' | 'poop' | 'cry' | 'feed' | 'idle_sit';
-  leakMeter: number; // 0..100
+  leakMeter: number;
   crawlSpeed: number;
   targetPos: THREE.Vector3;
   wanderTimer: number;
@@ -36,13 +36,12 @@ interface DiaperFlight {
   startPos: THREE.Vector3;
   targetPos: THREE.Vector3;
   targetBaby: BabyData;
-  progress: number; // 0..1
+  progress: number;
 }
 
 export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
-  // Game Engine State
   const [gameState, setGameState] = useState<GameState>(GameState.MainMenu);
   const [score, setScore] = useState<number>(0);
   const [highScore, setHighScore] = useState<number>(() => {
@@ -51,10 +50,9 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
   const [combo, setCombo] = useState<number>(0);
   const [lastAccuracy, setLastAccuracy] = useState<{ text: string; color: string } | null>(null);
   const [leakMeterVal, setLeakMeterVal] = useState<number>(0);
-  const [isPhoneFrame, setIsPhoneFrame] = useState<boolean>(true);
+  const [isPhoneFrame, setIsPhoneFrame] = useState<boolean>(false);
   const [gameTime, setGameTime] = useState<number>(0);
 
-  // References to keep updated values in Three.js animation loop without state re-binding
   const gameStateRef = useRef<GameState>(GameState.MainMenu);
   const settingsRef = useRef<GameSettings>(settings);
   const scoreRef = useRef<number>(0);
@@ -69,19 +67,16 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
   }, [settings]);
 
   useEffect(() => {
-    // Canvas 3D initialization
     const container = mountRef.current;
     if (!container) return;
 
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    // 1. Scene, Camera, Renderer Setup
     const scene = new THREE.Scene();
     scene.background = null;
 
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
-    // Isometric mobile view angle
     camera.position.set(0, 14, 12);
     camera.lookAt(0, 0, 0);
 
@@ -94,7 +89,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
 
     container.appendChild(renderer.domElement);
 
-    // 2. Lights Setup
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambientLight);
 
@@ -112,8 +106,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
     dirLight.shadow.camera.bottom = -shadowD;
     scene.add(dirLight);
 
-    // 3. Playfield & Environment
-    // Room Floor (Invisible, only receives shadows)
     const floorGeo = new THREE.PlaneGeometry(settings.boundingBoxWidth + 10, settings.boundingBoxLength + 10);
     const floorMat = new THREE.ShadowMaterial({ opacity: 0.3 });
     const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -121,14 +113,12 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // Playfield Bounds Visual Border
     const borderGeo = new THREE.BoxGeometry(settings.boundingBoxWidth, 0.1, settings.boundingBoxLength);
     const borderEdges = new THREE.EdgesGeometry(borderGeo);
     const borderLine = new THREE.LineSegments(borderEdges, new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 }));
     borderLine.position.y = 0.05;
     scene.add(borderLine);
 
-    // Decorative nursery items around carpet
     const toyMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.4 });
     const toyGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
     const toy1 = new THREE.Mesh(toyGeo, toyMat);
@@ -153,39 +143,23 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
     popokTex.colorSpace = THREE.SRGBColorSpace;
     popokTex.minFilter = THREE.NearestFilter;
     popokTex.magFilter = THREE.NearestFilter;
-    // Sprite sheet is 8x5
+
     babySpriteTex.repeat.set(1/8, 1/5);
-    // Default to Idle Sit (row 3 from bottom, which is index 3 if bottom is 0)
-    // Wait, the JSON order is:
-    // row 0 (top): Movement
-    // row 1: Idle Sit
-    // row 2: Cry
-    // row 3: Feed
-    // row 4 (bottom): Poop
-    // Bottom row in texture mapping (offset.y = 0) is Poop.
-    // Row 1 (offset.y = 1/5) is Feed.
-    // Row 2 (offset.y = 2/5) is Cry.
-    // Row 3 (offset.y = 3/5) is Idle Sit.
-    // Row 4 (top, offset.y = 4/5) is Movement.
     babySpriteTex.offset.set(0, 3/5);
 
-    // 4. Baby Model Builder Helper
-    const createBabyMesh = (): { group: THREE.Group; diaperMat: THREE.MeshStandardMaterial; canvas: HTMLCanvasElement; texture: THREE.CanvasTexture; sprite: THREE.Sprite, spriteTex: THREE.Texture, baby2DSprite: THREE.Sprite } => {
+    const createBabyMesh = () => {
       const babyGroup = new THREE.Group();
 
       const spriteTexClone = babySpriteTex.clone();
       const babyMat = new THREE.SpriteMaterial({ map: spriteTexClone, transparent: true });
       const baby2DSprite = new THREE.Sprite(babyMat);
       
-      // Make it appropriately sized (preserve 352/307.2 aspect ratio)
       baby2DSprite.scale.set(3.4375, 3, 1);
       baby2DSprite.position.set(0, 1.55, 0);
       babyGroup.add(baby2DSprite);
 
-      // Dummy diaperMat so we don't break existing code (we will apply tint to sprite instead)
       const diaperMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.3 });
 
-      // Floating Leak Meter Overhead HUD (Canvas Sprite)
       const canvas = document.createElement('canvas');
       canvas.width = 256;
       canvas.height = 64;
@@ -193,13 +167,12 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
       const sprite = new THREE.Sprite(spriteMat);
       sprite.scale.set(2.4, 0.6, 1);
-      sprite.position.set(0, 3.2, 0); // Moved up slightly to clear the taller 2D sprite
+      sprite.position.set(0, 3.2, 0);
       babyGroup.add(sprite);
 
       return { group: babyGroup, diaperMat, canvas, texture, sprite, spriteTex: spriteTexClone, baby2DSprite };
     };
 
-    // Instantiate Baby Controller Data
     const baby1 = createBabyMesh();
     scene.add(baby1.group);
 
@@ -221,37 +194,31 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       isExploded: false,
     };
 
-    // Draw Overhead Leak Meter Bar on Canvas Texture
     const updateLeakBarUI = (bData: BabyData) => {
       const ctx = bData.leakBarCanvas.getContext('2d');
       if (!ctx) return;
       ctx.clearRect(0, 0, 256, 64);
 
-      // Background pill
       ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
       ctx.beginPath();
       ctx.roundRect(10, 10, 236, 44, 12);
       ctx.fill();
 
-      // Label
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 16px sans-serif';
       ctx.fillText('LEAK METER', 24, 30);
 
-      // Percentage text
       const pct = Math.round(bData.leakMeter);
       ctx.fillStyle = pct > 75 ? '#ef4444' : pct > 40 ? '#f59e0b' : '#10b981';
       ctx.textAlign = 'right';
       ctx.fillText(`${pct}%`, 232, 30);
       ctx.textAlign = 'left';
 
-      // Meter Progress Track
       ctx.fillStyle = '#334155';
       ctx.beginPath();
       ctx.roundRect(24, 38, 208, 10, 5);
       ctx.fill();
 
-      // Progress Fill
       const fillW = (bData.leakMeter / 100) * 208;
       if (fillW > 0) {
         ctx.fillStyle = pct > 75 ? '#ef4444' : pct > 40 ? '#f59e0b' : '#10b981';
@@ -263,11 +230,9 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       bData.leakBarTexture.needsUpdate = true;
     };
 
-    // Diaper Projectile Pool & Explosions
     const diapersFlying: DiaperFlight[] = [];
     const particleSystems: { system: THREE.Points; life: number; maxLife: number }[] = [];
 
-    // Helper: Spawn Particle System (Hit FX or Code Brown Explosion)
     const spawnParticleExplosion = (pos: THREE.Vector3, isPoopExplosion: boolean) => {
       const particleCount = isPoopExplosion ? 120 : 35;
       const geometry = new THREE.BufferGeometry();
@@ -306,7 +271,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       });
     };
 
-    // Camera Shake Juice Controller State
     let cameraShakeTime = 0;
     let cameraShakeIntensity = 0;
     const baseCameraPos = new THREE.Vector3(0, 14, 12);
@@ -316,7 +280,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       cameraShakeIntensity = intensity;
     };
 
-    // 5. One-Tap Throw Diaper Raycaster Input Handler
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -336,13 +299,11 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       if (intersects.length > 0) {
         const targetPt = intersects[0].point;
 
-        // Create Diaper Sprite
         const diaperMat = new THREE.SpriteMaterial({ map: popokTex, transparent: true });
         const diaperMesh = new THREE.Sprite(diaperMat);
         diaperMesh.scale.set(1.5, 1.5, 1);
         scene.add(diaperMesh);
 
-        // Throw Origin (Bottom center camera)
         const startPt = new THREE.Vector3(0, 0.5, 6);
 
         diapersFlying.push({
@@ -361,7 +322,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
 
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
 
-    // 6. Main Game Loop (RequestAnimationFrame)
     let animationFrameId: number;
     let lastTime = performance.now();
     let sessionDuration = 0;
@@ -372,7 +332,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
       const deltaTime = Math.min((currentTime - lastTime) / 1000, 0.1);
       lastTime = currentTime;
 
-      // Camera Shake Juiciness Update
       if (cameraShakeTime > 0) {
         cameraShakeTime -= deltaTime;
         const offsetX = (Math.random() - 0.5) * cameraShakeIntensity;
@@ -386,15 +345,13 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
         sessionDuration += deltaTime;
         setGameTime(sessionDuration);
 
-        // A. Update Baby Leak Meter (Mathematical Difficulty Curve)
         const currentLeakRate = settingsRef.current.baseLeakSpeed * (1 + sessionDuration * settingsRef.current.difficultyRamp);
         babyData.leakMeter += currentLeakRate * deltaTime;
         babyData.leakMeter = Math.min(babyData.leakMeter, 100);
         setLeakMeterVal(babyData.leakMeter);
 
-        // Update 2D Sprite Material Tint Color Lerp (Hijau -> Kuning -> Merah)
         const normalizedLeak = babyData.leakMeter / 100;
-        const freshColor = new THREE.Color(0xffffff); // Use white for normal 2D sprite
+        const freshColor = new THREE.Color(0xffffff);
         const warningColor = new THREE.Color(0xffffaa);
         const dangerColor = new THREE.Color(0xffaaaa);
 
@@ -404,7 +361,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           babyData.baby2DSprite.material.color.lerpColors(warningColor, dangerColor, (normalizedLeak - 0.5) * 2);
         }
 
-        // Stink Cloud Particle Effect when leakMeter > 70%
         if (babyData.leakMeter >= 70 && Math.random() < 0.35) {
           const stinkPos = babyData.mesh.position.clone().add(new THREE.Vector3(
             (Math.random() - 0.5) * 0.6,
@@ -416,27 +372,23 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
 
         updateLeakBarUI(babyData);
 
-        // Leak Warning Sound threshold
         if (babyData.leakMeter >= 80 && settingsRef.current.enableSound && Math.random() < 0.05) {
           soundEffects.playWarning();
         }
 
-        // Trigger Code Brown Explosion if >= 100%
         if (babyData.leakMeter >= 100) {
           babyData.isExploded = true;
           spawnParticleExplosion(babyData.mesh.position, true);
-          triggerCameraShake(0.5, 0.45); // Strong camera shake on explosion
+          triggerCameraShake(0.5, 0.45);
           if (settingsRef.current.enableSound) {
             soundEffects.playExplosion();
           }
 
-          // Trigger Game Over State
           setTimeout(() => {
             setGameState(GameState.GameOver);
           }, 600);
         }
 
-        // B. Update Random Crawling Movement (Wander Physics)
         babyData.wanderTimer -= deltaTime;
         if (babyData.wanderTimer <= 0 || babyData.mesh.position.distanceTo(babyData.targetPos) < 0.4) {
           const halfW = settingsRef.current.boundingBoxWidth / 2 - 0.8;
@@ -445,7 +397,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           babyData.wanderTimer = 1.5 + Math.random() * 1.5;
         }
 
-        // Move baby towards targetPos
         const moveDir = babyData.targetPos.clone().sub(babyData.mesh.position);
         moveDir.y = 0;
         if (moveDir.lengthSq() > 0.01) {
@@ -456,8 +407,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
             babyData.state = 'crawl';
           }
 
-          // Flip sprite based on direction (left vs right)
-          // Texture repeat X handles flip horizontally when negated
           if (moveDir.x > 0) {
             babyData.spriteTex.repeat.x = -1 / 8;
             babyData.spriteTex.offset.x = (babyData.animFrame + 1) / 8;
@@ -471,13 +420,11 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           }
         }
 
-        // C. Update 2D Sprite Animation
         babyData.animTimer += deltaTime;
         if (babyData.animTimer > 0.1) {
           babyData.animTimer = 0;
           babyData.animFrame = (babyData.animFrame + 1) % 8;
           
-          // Apply frame offset
           if (babyData.spriteTex.repeat.x < 0) {
             babyData.spriteTex.offset.x = (babyData.animFrame + 1) / 8;
           } else {
@@ -485,29 +432,25 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           }
         }
 
-        // Apply Row offset based on state
         if (babyData.isExploded) {
-          babyData.spriteTex.offset.y = 0 / 5; // Poop
+          babyData.spriteTex.offset.y = 0 / 5;
         } else if (babyData.state === 'idle') {
-          babyData.spriteTex.offset.y = 3 / 5; // Idle Sit (fallback since no Idle)
+          babyData.spriteTex.offset.y = 3 / 5;
         } else if (babyData.state === 'crawl') {
-          babyData.spriteTex.offset.y = 4 / 5; // Movement
+          babyData.spriteTex.offset.y = 4 / 5;
         } else if (babyData.state === 'idle_sit') {
-          babyData.spriteTex.offset.y = 3 / 5; // Idle Sit
+          babyData.spriteTex.offset.y = 3 / 5;
         }
       }
 
-      // C. Update Diaper Projectile Flights
       for (let i = diapersFlying.length - 1; i >= 0; i--) {
         const flight = diapersFlying[i];
-        flight.progress += deltaTime / 0.45; // 0.45s parabolic flight
+        flight.progress += deltaTime / 0.45;
 
         if (flight.progress >= 1.0) {
-          // Arrived at target point!
           scene.remove(flight.mesh);
           diapersFlying.splice(i, 1);
 
-          // Calculate Accuracy vs Baby Center Position
           const distToBaby = flight.targetPos.distanceTo(babyData.mesh.position);
           const perfectRadius = 0.6;
           const normalRadius = 1.8;
@@ -516,7 +459,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
             const isBullseye = distToBaby <= perfectRadius;
             const accuracy = isBullseye ? 1.0 : Math.max(0.5, 1 - distToBaby / normalRadius);
 
-            // Reset baby leak meter!
             babyData.leakMeter = 0;
             babyData.state = 'idle_sit';
             setTimeout(() => {
@@ -527,7 +469,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
             babyData.crawlSpeed = Math.min(babyData.crawlSpeed + settingsRef.current.speedIncreasePerHit, settingsRef.current.crawlSpeedMax);
             updateLeakBarUI(babyData);
 
-            // Calculate Score & Combo
             const newCombo = comboRef.current + 1;
             comboRef.current = newCombo;
             setCombo(newCombo);
@@ -542,7 +483,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
               localStorage.setItem('DiaperRush_HighScore', newScore.toString());
             }
 
-            // Hit feedback popup text & Juiciness
             triggerCameraShake(0.18, isBullseye ? 0.2 : 0.1);
 
             setLastAccuracy({
@@ -551,23 +491,20 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
             });
             setTimeout(() => setLastAccuracy(null), 1000);
 
-            // Spawn blue diaper hit FX & Sound
             spawnParticleExplosion(babyData.mesh.position, false);
 
             if (settingsRef.current.enableSound) {
               soundEffects.playHit(isBullseye);
             }
           } else {
-            // Total Miss
             comboRef.current = 0;
             setCombo(0);
             setLastAccuracy({ text: 'MISS!', color: '#ef4444' });
             setTimeout(() => setLastAccuracy(null), 800);
           }
         } else {
-          // Parabolic Trajectory Bezier
           const currentPos = new THREE.Vector3().lerpVectors(flight.startPos, flight.targetPos, flight.progress);
-          currentPos.y += Math.sin(flight.progress * Math.PI) * 3.5; // Arc height
+          currentPos.y += Math.sin(flight.progress * Math.PI) * 3.5;
           flight.mesh.position.copy(currentPos);
           if (flight.mesh instanceof THREE.Sprite) {
             flight.mesh.material.rotation += deltaTime * 8;
@@ -575,7 +512,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
         }
       }
 
-      // D. Update Particle Explosions
       for (let i = particleSystems.length - 1; i >= 0; i--) {
         const ps = particleSystems[i];
         ps.life += deltaTime;
@@ -583,7 +519,7 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
         const arr = attr.array as Float32Array;
 
         for (let j = 0; j < arr.length / 3; j++) {
-          arr[j * 3 + 1] -= deltaTime * 4.5; // Gravity
+          arr[j * 3 + 1] -= deltaTime * 4.5;
         }
         attr.needsUpdate = true;
 
@@ -599,7 +535,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
 
     animate(performance.now());
 
-    // Container Resize Handler using ResizeObserver
     const handleResize = () => {
       if (!mountRef.current) return;
       const w = mountRef.current.clientWidth;
@@ -622,7 +557,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
     };
   }, []);
 
-  // Control Functions
   const handleStartGame = () => {
     scoreRef.current = 0;
     comboRef.current = 0;
@@ -637,18 +571,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900 p-2 sm:p-4 overflow-hidden">
-      {/* Phone Frame Wrapper Toggle */}
-      <div className="absolute top-3 right-3 z-30 flex items-center gap-2 bg-slate-800/90 backdrop-blur border border-slate-700 rounded-lg p-1.5 shadow-md text-xs text-slate-300">
-        <button
-          onClick={() => setIsPhoneFrame(!isPhoneFrame)}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 transition text-white font-medium"
-        >
-          {isPhoneFrame ? <Smartphone className="w-4 h-4 text-emerald-400" /> : <Maximize2 className="w-4 h-4 text-cyan-400" />}
-          {isPhoneFrame ? 'Mobile Phone View' : 'Full Canvas'}
-        </button>
-      </div>
-
-      {/* Simulator Frame Container */}
       <div
         className={`relative transition-all duration-300 ${
           isPhoneFrame
@@ -656,13 +578,10 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
             : 'w-full h-full rounded-2xl border border-slate-800 overflow-hidden shadow-xl'
         }`}
       >
-        {/* 3D WebGL Canvas Viewport */}
         <div ref={mountRef} className="w-full h-full cursor-crosshair bg-slate-900" style={{ backgroundImage: `url(${floorBgImg})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
 
-        {/* HUD OVERLAY: Floating Stats */}
         {gameState === GameState.Playing && (
           <div className="absolute top-4 left-4 right-4 pointer-events-none flex items-center justify-between z-20">
-            {/* Score & Combo */}
             <div className="bg-slate-900/80 backdrop-blur border border-slate-700 px-3 py-1.5 rounded-xl shadow text-white">
               <div className="text-[10px] font-bold text-slate-400 tracking-wider">SCORE</div>
               <div className="text-xl font-black text-amber-400">{score}</div>
@@ -673,7 +592,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
               )}
             </div>
 
-            {/* Leak Warning Header */}
             <div className="bg-slate-900/80 backdrop-blur border border-slate-700 px-3 py-1.5 rounded-xl shadow text-right">
               <div className="text-[10px] font-bold text-slate-400 tracking-wider">LEAK SPEED</div>
               <div className="text-sm font-bold text-cyan-400">
@@ -683,7 +601,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           </div>
         )}
 
-        {/* Feedback Bullseye Popup */}
         {lastAccuracy && (
           <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-bounce">
             <div
@@ -695,7 +612,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           </div>
         )}
 
-        {/* MODAL: Main Menu */}
         {gameState === GameState.MainMenu && (
           <div className="absolute inset-0 z-30 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
             <img src={gameTitleImg} alt="Diaper Rush: Code Brown!" className="w-64 h-auto object-contain mb-4 drop-shadow-2xl" />
@@ -724,7 +640,6 @@ export const GameCanvas3D: React.FC<GameCanvas3DProps> = ({ settings }) => {
           </div>
         )}
 
-        {/* MODAL: Game Over / Rewarded Revive */}
         {gameState === GameState.GameOver && (
           <div className="absolute inset-0 z-30 bg-rose-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
             <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mb-4">

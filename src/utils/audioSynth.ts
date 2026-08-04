@@ -1,4 +1,3 @@
-// Simple Web Audio API Synthesizer for Hyper-Casual Game Sound FX
 class AudioSynth {
   private ctx: AudioContext | null = null;
 
@@ -60,7 +59,6 @@ class AudioSynth {
     this.initCtx();
     if (!this.ctx) return;
 
-    // Noise buffer for explosion splat
     const bufferSize = this.ctx.sampleRate * 0.4;
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const data = buffer.getChannelData(0);
